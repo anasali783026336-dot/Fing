@@ -82,6 +82,11 @@ class NetPulseViewModel(application: Application) : AndroidViewModel(application
     private val scannerEngine = NetworkScannerEngine(application)
     private val repository = NetPulseRepository(database.dao(), scannerEngine)
 
+    private val prefs = application.getSharedPreferences("netpulse_prefs", android.content.Context.MODE_PRIVATE)
+
+    private val _showOnboardingTutorial = MutableStateFlow(!prefs.getBoolean("onboarding_completed_v1", false))
+    val showOnboardingTutorial: StateFlow<Boolean> = _showOnboardingTutorial.asStateFlow()
+
     private val _currentTab = MutableStateFlow(MainNavTab.DEVICES)
     val currentTab: StateFlow<MainNavTab> = _currentTab.asStateFlow()
 
@@ -224,6 +229,29 @@ class NetPulseViewModel(application: Application) : AndroidViewModel(application
 
     init {
         refreshNetworkAndScan()
+    }
+
+    fun openOnboardingTutorial() {
+        _showOnboardingTutorial.value = true
+    }
+
+    fun completeOnboardingTutorial() {
+        prefs.edit().putBoolean("onboarding_completed_v1", true).apply()
+        _showOnboardingTutorial.value = false
+    }
+
+    fun jumpFromTutorialToFeature(tab: MainNavTab, triggerScanOrTest: Boolean) {
+        completeOnboardingTutorial()
+        _selectedDeviceMac.value = null
+        _currentTab.value = tab
+        if (triggerScanOrTest) {
+            when (tab) {
+                MainNavTab.DEVICES -> refreshNetworkAndScan()
+                MainNavTab.SPEED -> startInternetSpeedTest()
+                MainNavTab.SECURITY -> startSecurityAudit()
+                MainNavTab.TOOLS -> {}
+            }
+        }
     }
 
     fun selectTab(tab: MainNavTab) {

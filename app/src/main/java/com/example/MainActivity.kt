@@ -7,26 +7,24 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Radar
+import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.outlined.Build
@@ -64,6 +62,7 @@ import com.example.ui.components.BadgeChip
 import com.example.ui.components.StatusPulseDot
 import com.example.ui.screens.DeviceDetailsScreen
 import com.example.ui.screens.DevicesScreen
+import com.example.ui.screens.OnboardingTutorialScreen
 import com.example.ui.screens.SecurityScreen
 import com.example.ui.screens.SpeedTestScreen
 import com.example.ui.screens.ToolsScreen
@@ -91,6 +90,7 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NetPulseApp(viewModel: NetPulseViewModel = viewModel()) {
+    val showOnboarding by viewModel.showOnboardingTutorial.collectAsStateWithLifecycle()
     val currentTab by viewModel.currentTab.collectAsStateWithLifecycle()
     val selectedDevice by viewModel.selectedDevice.collectAsStateWithLifecycle()
     val overview by viewModel.networkOverview.collectAsStateWithLifecycle()
@@ -127,7 +127,7 @@ fun NetPulseApp(viewModel: NetPulseViewModel = viewModel()) {
     val intruderCount = allDevices.count { !it.isTrusted && !it.isBlocked }
 
     // Handle back button when on non-home tab
-    BackHandler(enabled = selectedDevice == null && currentTab != MainNavTab.DEVICES) {
+    BackHandler(enabled = !showOnboarding && selectedDevice == null && currentTab != MainNavTab.DEVICES) {
         viewModel.selectTab(MainNavTab.DEVICES)
     }
 
@@ -137,7 +137,7 @@ fun NetPulseApp(viewModel: NetPulseViewModel = viewModel()) {
         Scaffold(
             contentWindowInsets = WindowInsets.safeDrawing,
             topBar = {
-                if (selectedDevice == null) {
+                if (!showOnboarding && selectedDevice == null) {
                     TopAppBar(
                         title = {
                             Row(
@@ -178,6 +178,35 @@ fun NetPulseApp(viewModel: NetPulseViewModel = viewModel()) {
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 modifier = Modifier.padding(end = 12.dp)
                             ) {
+                                // Interactive Tutorial Re-launch Button
+                                Surface(
+                                    onClick = { viewModel.openOnboardingTutorial() },
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = ElectricCyan.copy(alpha = 0.15f),
+                                    modifier = Modifier
+                                        .border(1.dp, ElectricCyan.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
+                                        .testTag("open_tutorial_button")
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.School,
+                                            contentDescription = "الجولة التعليمية",
+                                            tint = ElectricCyan,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Text(
+                                            text = "دليل الشبكة",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = ElectricCyan,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+
                                 StatusPulseDot(isOnline = overview.isConnected)
                                 BadgeChip(
                                     text = "$onlineCount متصل",
@@ -193,7 +222,7 @@ fun NetPulseApp(viewModel: NetPulseViewModel = viewModel()) {
                 }
             },
             bottomBar = {
-                if (!isExpandedScreen && selectedDevice == null) {
+                if (!showOnboarding && !isExpandedScreen && selectedDevice == null) {
                     NavigationBar(
                         containerColor = NavySurface,
                         tonalElevation = 8.dp
@@ -248,7 +277,7 @@ fun NetPulseApp(viewModel: NetPulseViewModel = viewModel()) {
                     .fillMaxSize()
                     .padding(innerPadding)
             ) {
-                if (isExpandedScreen && selectedDevice == null) {
+                if (!showOnboarding && isExpandedScreen && selectedDevice == null) {
                     NavigationRail(
                         containerColor = NavySurface,
                         modifier = Modifier.fillMaxHeight()
@@ -273,104 +302,118 @@ fun NetPulseApp(viewModel: NetPulseViewModel = viewModel()) {
 
                 Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
                     val activeDevice = selectedDevice
-                    if (activeDevice != null) {
-                        DeviceDetailsScreen(
-                            device = activeDevice,
-                            gatewayIp = overview.gatewayIp,
-                            diagState = deviceDiagState,
-                            onBack = { viewModel.closeDeviceDetails() },
-                            onSaveCustomization = { newName, newCategory, newRoom, newNotes, isTrusted, alertsEnabled ->
-                                viewModel.saveDeviceCustomization(
-                                    macAddress = activeDevice.macAddress,
-                                    newName = newName,
-                                    newCategory = newCategory,
-                                    newRoom = newRoom,
-                                    newNotes = newNotes,
-                                    isTrusted = isTrusted,
-                                    alertsEnabled = alertsEnabled
-                                )
-                            },
-                            onToggleBlock = { viewModel.toggleBlockDevice(activeDevice) },
-                            onTogglePause = { label -> viewModel.togglePauseDeviceInternet(activeDevice, label) },
-                            onToggleAlerts = { enabled -> viewModel.toggleDeviceAlerts(activeDevice, enabled) },
-                            onRunDeviceSpeedTest = { viewModel.runDeviceSpeedTest(activeDevice) },
-                            onRunPortAndPingScan = { viewModel.runDevicePortAndPingScan(activeDevice) },
-                            onTriggerWakeOnLan = { port -> viewModel.triggerDeviceWakeOnLan(activeDevice, port) },
-                            onDismissBanner = { viewModel.clearDeviceBannerMessage() }
-                        )
-                    } else {
-                        Crossfade(targetState = currentTab, label = "main_tab_crossfade") { tab ->
-                            when (tab) {
-                                MainNavTab.DEVICES -> DevicesScreen(
-                                    overview = overview,
-                                    allDevicesCount = allDevices.size,
-                                    onlineDevicesCount = onlineCount,
-                                    intruderCount = intruderCount,
-                                    devices = filteredDevices,
-                                    isScanning = isScanning,
-                                    scanProgress = scanProgress,
-                                    scanStatusMessage = scanStatusMessage,
-                                    searchQuery = searchQuery,
-                                    sortOption = sortOption,
-                                    filterOption = filterOption,
-                                    categoryFilter = categoryFilter,
-                                    onRefreshScan = { viewModel.refreshNetworkAndScan() },
-                                    onSearchQueryChange = { viewModel.updateSearchQuery(it) },
-                                    onSortOptionChange = { viewModel.updateSortOption(it) },
-                                    onFilterOptionChange = { viewModel.updateFilterOption(it) },
-                                    onCategoryFilterChange = { viewModel.updateCategoryFilter(it) },
-                                    onDeviceClick = { viewModel.openDeviceDetails(it) },
-                                    onQuickRenameDevice = { dev, newName ->
-                                        viewModel.saveDeviceCustomization(
-                                            macAddress = dev.macAddress,
-                                            newName = newName,
-                                            newCategory = dev.category,
-                                            newRoom = dev.locationRoom,
-                                            newNotes = dev.notes,
-                                            isTrusted = dev.isTrusted,
-                                            alertsEnabled = dev.alertsEnabled
-                                        )
-                                    },
-                                    onNavigateToSecurity = { viewModel.selectTab(MainNavTab.SECURITY) }
-                                )
+                    when {
+                        showOnboarding -> {
+                            OnboardingTutorialScreen(
+                                overview = overview,
+                                onFinishTutorial = { viewModel.completeOnboardingTutorial() },
+                                onJumpToFeature = { tab, triggerAction ->
+                                    viewModel.jumpFromTutorialToFeature(tab, triggerAction)
+                                }
+                            )
+                        }
 
-                                MainNavTab.SPEED -> SpeedTestScreen(
-                                    overview = overview,
-                                    liveState = speedTestState,
-                                    history = speedHistory,
-                                    onStartSpeedTest = { viewModel.startInternetSpeedTest() }
-                                )
+                        activeDevice != null -> {
+                            DeviceDetailsScreen(
+                                device = activeDevice,
+                                gatewayIp = overview.gatewayIp,
+                                diagState = deviceDiagState,
+                                onBack = { viewModel.closeDeviceDetails() },
+                                onSaveCustomization = { newName, newCategory, newRoom, newNotes, isTrusted, alertsEnabled ->
+                                    viewModel.saveDeviceCustomization(
+                                        macAddress = activeDevice.macAddress,
+                                        newName = newName,
+                                        newCategory = newCategory,
+                                        newRoom = newRoom,
+                                        newNotes = newNotes,
+                                        isTrusted = isTrusted,
+                                        alertsEnabled = alertsEnabled
+                                    )
+                                },
+                                onToggleBlock = { viewModel.toggleBlockDevice(activeDevice) },
+                                onTogglePause = { label -> viewModel.togglePauseDeviceInternet(activeDevice, label) },
+                                onToggleAlerts = { enabled -> viewModel.toggleDeviceAlerts(activeDevice, enabled) },
+                                onRunDeviceSpeedTest = { viewModel.runDeviceSpeedTest(activeDevice) },
+                                onRunPortAndPingScan = { viewModel.runDevicePortAndPingScan(activeDevice) },
+                                onTriggerWakeOnLan = { port -> viewModel.triggerDeviceWakeOnLan(activeDevice, port) },
+                                onDismissBanner = { viewModel.clearDeviceBannerMessage() }
+                            )
+                        }
 
-                                MainNavTab.SECURITY -> SecurityScreen(
-                                    overview = overview,
-                                    auditReport = securityReport,
-                                    devices = allDevices,
-                                    securityEvents = securityEvents,
-                                    autoIntruderAlertEnabled = autoIntruderAlert,
-                                    onStartSecurityAudit = { viewModel.startSecurityAudit() },
-                                    onToggleAutoIntruderAlert = { viewModel.toggleAutoIntruderAlert(it) },
-                                    onTrustDevice = { viewModel.trustIntruderDevice(it) },
-                                    onBlockDevice = { viewModel.blockIntruderDevice(it) },
-                                    onInspectDevice = { viewModel.openDeviceDetails(it) }
-                                )
+                        else -> {
+                            Crossfade(targetState = currentTab, label = "main_tab_crossfade") { tab ->
+                                when (tab) {
+                                    MainNavTab.DEVICES -> DevicesScreen(
+                                        overview = overview,
+                                        allDevicesCount = allDevices.size,
+                                        onlineDevicesCount = onlineCount,
+                                        intruderCount = intruderCount,
+                                        devices = filteredDevices,
+                                        isScanning = isScanning,
+                                        scanProgress = scanProgress,
+                                        scanStatusMessage = scanStatusMessage,
+                                        searchQuery = searchQuery,
+                                        sortOption = sortOption,
+                                        filterOption = filterOption,
+                                        categoryFilter = categoryFilter,
+                                        onRefreshScan = { viewModel.refreshNetworkAndScan() },
+                                        onSearchQueryChange = { viewModel.updateSearchQuery(it) },
+                                        onSortOptionChange = { viewModel.updateSortOption(it) },
+                                        onFilterOptionChange = { viewModel.updateFilterOption(it) },
+                                        onCategoryFilterChange = { viewModel.updateCategoryFilter(it) },
+                                        onDeviceClick = { viewModel.openDeviceDetails(it) },
+                                        onQuickRenameDevice = { dev, newName ->
+                                            viewModel.saveDeviceCustomization(
+                                                macAddress = dev.macAddress,
+                                                newName = newName,
+                                                newCategory = dev.category,
+                                                newRoom = dev.locationRoom,
+                                                newNotes = dev.notes,
+                                                isTrusted = dev.isTrusted,
+                                                alertsEnabled = dev.alertsEnabled
+                                            )
+                                        },
+                                        onNavigateToSecurity = { viewModel.selectTab(MainNavTab.SECURITY) }
+                                    )
 
-                                MainNavTab.TOOLS -> ToolsScreen(
-                                    overview = overview,
-                                    devices = allDevices,
-                                    activeTool = activeTool,
-                                    targetHost = toolTargetHost,
-                                    isToolRunning = isToolRunning,
-                                    pingPackets = pingPackets,
-                                    pingSummary = pingSummary,
-                                    tracerouteHops = tracerouteHops,
-                                    portScanResults = portScanResults,
-                                    portScanProgress = portScanProgress,
-                                    dnsLookupResult = dnsLookupResult,
-                                    wolResult = wolToolResult,
-                                    onSelectTool = { tool, target -> viewModel.selectDiagnosticTool(tool, target) },
-                                    onTargetHostChange = { viewModel.updateToolTargetHost(it) },
-                                    onExecuteTool = { viewModel.executeSelectedDiagnosticTool() }
-                                )
+                                    MainNavTab.SPEED -> SpeedTestScreen(
+                                        overview = overview,
+                                        liveState = speedTestState,
+                                        history = speedHistory,
+                                        onStartSpeedTest = { viewModel.startInternetSpeedTest() }
+                                    )
+
+                                    MainNavTab.SECURITY -> SecurityScreen(
+                                        overview = overview,
+                                        auditReport = securityReport,
+                                        devices = allDevices,
+                                        securityEvents = securityEvents,
+                                        autoIntruderAlertEnabled = autoIntruderAlert,
+                                        onStartSecurityAudit = { viewModel.startSecurityAudit() },
+                                        onToggleAutoIntruderAlert = { viewModel.toggleAutoIntruderAlert(it) },
+                                        onTrustDevice = { viewModel.trustIntruderDevice(it) },
+                                        onBlockDevice = { viewModel.blockIntruderDevice(it) },
+                                        onInspectDevice = { viewModel.openDeviceDetails(it) }
+                                    )
+
+                                    MainNavTab.TOOLS -> ToolsScreen(
+                                        overview = overview,
+                                        devices = allDevices,
+                                        activeTool = activeTool,
+                                        targetHost = toolTargetHost,
+                                        isToolRunning = isToolRunning,
+                                        pingPackets = pingPackets,
+                                        pingSummary = pingSummary,
+                                        tracerouteHops = tracerouteHops,
+                                        portScanResults = portScanResults,
+                                        portScanProgress = portScanProgress,
+                                        dnsLookupResult = dnsLookupResult,
+                                        wolResult = wolToolResult,
+                                        onSelectTool = { tool, target -> viewModel.selectDiagnosticTool(tool, target) },
+                                        onTargetHostChange = { viewModel.updateToolTargetHost(it) },
+                                        onExecuteTool = { viewModel.executeSelectedDiagnosticTool() }
+                                    )
+                                }
                             }
                         }
                     }
