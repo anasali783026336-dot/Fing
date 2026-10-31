@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">NetPulse</string>
+    <string name="tab_devices">الأجهزة</string>
+    <string name="tab_speed">السرعة</string>
+    <string name="tab_security">الأمان</string>
+    <string name="tab_tools">الأدوات</string>
+    <string name="scan_network">فحص الشبكة</string>
+    <string name="Filter_devices">فلترة وفرز</string>
+    <string name="device_details">تفاصيل الجهاز</string>
+    <string name="start_speed_test">ابدأ اختبار السرعة</string>
+    <string name="security_audit">الفحص الأمني للشبكة</string>
+    <string name="network_tools">أدوات الشبكة</string>
+</resources>
