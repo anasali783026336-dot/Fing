@@ -30,29 +30,56 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: |
+            17
+            21
           cache: 'gradle'
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Accept Android SDK Licenses & Verify SDK Components
         run: |
           set -e
-          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
-          if [ -z "$SDK_ROOT" ]; then
-            echo "Error: ANDROID_HOME / ANDROID_SDK_ROOT is not set."
-            exit 1
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          mkdir -p "$SDK_ROOT/licenses"
+          mkdir -p "$SDK_ROOT/platforms"
+          mkdir -p "$SDK_ROOT/build-tools"
+
+          # Write official Google Android SDK license hashes directly to avoid sdkmanager EPIPE / interactive errors
+          printf "\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e\n24333f8a63b6825ea9c5514f83c2829b004d1fee\ne9acab5b5fbb560a72cfaecce8946896ff6aab9d\n" > "$SDK_ROOT/licenses/android-sdk-license"
+          printf "\n84831b9409646a918e30573bab4c9c91346d8abd\n504667f4c0de7af1a06de9f4b1727b84351f2910\n" > "$SDK_ROOT/licenses/android-sdk-preview-license"
+          printf "\n601085b94cd77f0b54ff86406957099ebe79c4d6\n" > "$SDK_ROOT/licenses/android-googletv-license"
+          printf "\nceff83576aac4f7f37cb98fe189e9fb3c49d3b81\n" > "$SDK_ROOT/licenses/android-googlexr-license"
+          printf "\n859f317696f67ef3d7f30a50a5560e7834b43903\n" > "$SDK_ROOT/licenses/android-sdk-arm-dbt-license"
+          printf "\n33b6a2b64607f11b759f320ef9dff4ae5c47d97a\n" > "$SDK_ROOT/licenses/google-gdk-license"
+          printf "\n3a7848b1d7366ca5cfa0be477627644ca73f47e3\n" > "$SDK_ROOT/licenses/microxr-sysimage-license"
+          printf "\ne9acab5b5fbb560a72cfaecce8946896ff6aab9d\n" > "$SDK_ROOT/licenses/mips-android-sysimage-license"
+
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          if [ -d "$SDK_ROOT/cmdline-tools/latest/bin" ]; then
+            echo "$SDK_ROOT/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
           fi
-          echo "Using Android SDK at: $SDK_ROOT"
-          SDKMANAGER=$(find "$SDK_ROOT/cmdline-tools" -name sdkmanager -type f 2>/dev/null | head -n 1 || true)
-          if [ -z "$SDKMANAGER" ] && [ -x "$SDK_ROOT/tools/bin/sdkmanager" ]; then
-            SDKMANAGER="$SDK_ROOT/tools/bin/sdkmanager"
+          if [ -d "$SDK_ROOT/platform-tools" ]; then
+            echo "$SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
           fi
+
+          # Find available sdkmanager and install required SDK packages cleanly
+          SDKMANAGER=""
+          if [ -x "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
+            SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          else
+            SDKMANAGER=$(find "$SDK_ROOT" -name sdkmanager -type f 2>/dev/null | head -n 1 || true)
+          fi
+
           if [ -n "$SDKMANAGER" ]; then
-            yes | "$SDKMANAGER" --licenses > /dev/null || true
-            "$SDKMANAGER" "platform-tools" "platforms;android-36" "build-tools;35.0.0" > /dev/null || true
+            echo "Found sdkmanager at: $SDKMANAGER"
+            set +o pipefail
+            yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses > /dev/null 2>&1 || true
+            "$SDKMANAGER" --sdk_root="$SDK_ROOT" "platform-tools" "platforms;android-36" "platforms;android-36.1" "build-tools;36.0.0" || true
+            set -o pipefail
           fi
+
+          echo "Android SDK configured at: $SDK_ROOT"
+          ls -la "$SDK_ROOT/licenses"
 
       - name: Restore Debug Keystore if needed
         env:
@@ -63,10 +90,10 @@ jobs:
             echo "Existing debug.keystore found."
           elif [ -n "$DEBUG_KEYSTORE_SECRET" ]; then
             echo "Restoring debug.keystore from GitHub Secret..."
-            echo "$DEBUG_KEYSTORE_SECRET" | base64 --decode > debug.keystore
+            echo "$DEBUG_KEYSTORE_SECRET" | tr -d ' \t\r\n' | base64 --decode > debug.keystore
           elif [ -f "debug.keystore.base64" ] && [ -s "debug.keystore.base64" ]; then
             echo "Restoring debug.keystore from debug.keystore.base64..."
-            base64 --decode debug.keystore.base64 > debug.keystore
+            tr -d ' \t\r\n' < debug.keystore.base64 | base64 --decode > debug.keystore
           else
             echo "Generating standard Android debug.keystore with keytool..."
             keytool -genkeypair -v \
@@ -99,7 +126,7 @@ jobs:
               exit 1
             fi
           done
-          grep -E "^distributionUrl=https\\://services\.gradle\.org/distributions/gradle-.*-bin\.zip$" ./gradle/wrapper/gradle-wrapper.properties
+          grep "services.gradle.org/distributions/gradle-" ./gradle/wrapper/gradle-wrapper.properties
           ./gradlew --version --no-daemon
 
       - name: Run Unit Tests
